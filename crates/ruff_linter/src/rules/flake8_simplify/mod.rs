@@ -6,12 +6,13 @@ mod tests {
     use std::path::Path;
 
     use anyhow::Result;
+    use ruff_diagnostics::Applicability;
     use ruff_python_ast::PythonVersion;
     use test_case::test_case;
 
     use crate::registry::Rule;
     use crate::settings::LinterSettings;
-    use crate::test::test_path;
+    use crate::test::{test_path, test_snippet};
     use crate::{assert_diagnostics, assert_diagnostics_diff, settings};
 
     #[test_case(Rule::DuplicateIsinstanceCall, Path::new("SIM101.py"))]
@@ -57,6 +58,33 @@ mod tests {
         )?;
         assert_diagnostics!(snapshot, diagnostics);
         Ok(())
+    }
+
+    #[test_case(
+        "def f(a, b):\n    if not a and b:\n        return True\n    elif a and b:\n        return True\n    else:\n        return False\n",
+        "return bool(not a and b or a and b)"
+    )]
+    #[test_case(
+        "def f(a, b, c):\n    if a:\n        return True\n    elif b:\n        return True\n    elif c:\n        return True\n    else:\n        return False\n",
+        "return bool(a or b or c)"
+    )]
+    #[test_case(
+        "def f(a, b, c):\n    if a:\n        return False\n    elif b:\n        return False\n    elif c:\n        return False\n    else:\n        return True\n",
+        "return not (a or b or c)"
+    )]
+    fn needless_bool_chain(source: &str, replacement: &str) {
+        let diagnostics = test_snippet(source, &LinterSettings::for_rule(Rule::NeedlessBool));
+        assert_eq!(diagnostics.len(), 1);
+        let diagnostic = &diagnostics[0];
+        assert!(!diagnostic.has_applicable_fix(Applicability::Safe));
+        assert!(diagnostic.has_applicable_fix(Applicability::Unsafe));
+        assert_eq!(
+            diagnostic
+                .fix()
+                .and_then(|fix| fix.edits().first())
+                .and_then(|edit| edit.content()),
+            Some(replacement)
+        );
     }
 
     #[test_case(Rule::EnumerateForLoop, Path::new("SIM113.py"))]

@@ -53,6 +53,8 @@ use crate::{Edit, Fix, FixAvailability, Violation};
 /// return a proper Boolean. While the fix will try to wrap non-boolean values in a call to bool,
 /// custom implementations of comparison functions like `__eq__` can avoid the bool call and still
 /// lead to altered behavior.
+/// Combining multiple conditions can also change how often their truth values are evaluated,
+/// which can affect objects with stateful `__bool__` implementations.
 ///
 /// ## References
 /// - [Python documentation: Truth Value Testing](https://docs.python.org/3/library/stdtypes.html#truth-value-testing)
@@ -100,89 +102,94 @@ pub(crate) fn needless_bool(checker: &Checker, stmt: &Stmt) {
         ..
     } = stmt_if;
 
-    // Extract an `if` or `elif` (that returns) followed by an else (that returns the same value)
-    let (if_test, if_body, else_body, range) = match elif_else_clauses.as_slice() {
-        // if-else case:
-        // ```python
-        // if x > 0:
-        //     return True
-        // else:
-        //     return False
-        // ```
-        [
-            ElifElseClause {
-                body: else_body,
-                test: None,
-                ..
-            },
-        ] => (
-            if_test.as_ref(),
-            if_body,
-            else_body.as_slice(),
-            stmt_if.range(),
-        ),
-        // elif-else case
-        // ```python
-        // if x > 0:
-        //     return True
-        // elif x < 0:
-        //     return False
-        // ```
-        [
-            ..,
-            ElifElseClause {
-                body: elif_body,
-                test: Some(elif_test),
-                range: elif_range,
-                node_index: _,
-            },
-            ElifElseClause {
-                body: else_body,
-                test: None,
-                range: else_range,
-                node_index: _,
-            },
-        ] => (
-            elif_test,
-            elif_body,
-            else_body.as_slice(),
-            TextRange::new(elif_range.start(), else_range.end()),
-        ),
-        // if-implicit-else case:
-        // ```python
-        // if x > 0:
-        //     return True
-        // return False
-        // ```
-        [] => {
-            // Fetching the next sibling is expensive, so do some validation early.
-            if is_one_line_return_bool(if_body).is_none() {
-                return;
-            }
-
-            // Fetch the next sibling statement.
-            let Some(next_stmt) = checker
-                .semantic()
-                .current_statement_parent()
-                .and_then(|parent| traversal::suite(stmt, parent))
-                .and_then(|suite| suite.next_sibling())
-            else {
-                return;
-            };
-
-            // If the next sibling is not a return statement, abort.
-            if !next_stmt.is_return_stmt() {
-                return;
-            }
-
-            (
+    let combined = boolean_chain(stmt_if);
+    let (if_test, if_body, else_body, range) = if let Some((test, else_body)) = &combined {
+        (test, if_body, *else_body, stmt_if.range())
+    } else {
+        // Extract an `if` or `elif` followed by an `else` with the opposite return value.
+        match elif_else_clauses.as_slice() {
+            // if-else case:
+            // ```python
+            // if x > 0:
+            //     return True
+            // else:
+            //     return False
+            // ```
+            [
+                ElifElseClause {
+                    body: else_body,
+                    test: None,
+                    ..
+                },
+            ] => (
                 if_test.as_ref(),
                 if_body,
-                std::slice::from_ref(next_stmt),
-                TextRange::new(stmt_if.start(), next_stmt.end()),
-            )
+                else_body.as_slice(),
+                stmt_if.range(),
+            ),
+            // elif-else case
+            // ```python
+            // if x > 0:
+            //     return True
+            // elif x < 0:
+            //     return False
+            // ```
+            [
+                ..,
+                ElifElseClause {
+                    body: elif_body,
+                    test: Some(elif_test),
+                    range: elif_range,
+                    node_index: _,
+                },
+                ElifElseClause {
+                    body: else_body,
+                    test: None,
+                    range: else_range,
+                    node_index: _,
+                },
+            ] => (
+                elif_test,
+                elif_body,
+                else_body.as_slice(),
+                TextRange::new(elif_range.start(), else_range.end()),
+            ),
+            // if-implicit-else case:
+            // ```python
+            // if x > 0:
+            //     return True
+            // return False
+            // ```
+            [] => {
+                // Fetching the next sibling is expensive, so do some validation early.
+                if is_one_line_return_bool(if_body).is_none() {
+                    return;
+                }
+
+                // Fetch the next sibling statement.
+                let Some(next_stmt) = checker
+                    .semantic()
+                    .current_statement_parent()
+                    .and_then(|parent| traversal::suite(stmt, parent))
+                    .and_then(|suite| suite.next_sibling())
+                else {
+                    return;
+                };
+
+                // If the next sibling is not a return statement, abort.
+                if !next_stmt.is_return_stmt() {
+                    return;
+                }
+
+                (
+                    if_test.as_ref(),
+                    if_body,
+                    std::slice::from_ref(next_stmt),
+                    TextRange::new(stmt_if.start(), next_stmt.end()),
+                )
+            }
+            _ => return,
         }
-        _ => return,
     };
 
     // Both branches must be one-liners that return a boolean.
@@ -318,6 +325,47 @@ pub(crate) fn needless_bool(checker: &Checker, stmt: &Stmt) {
             range,
         )));
     }
+}
+
+fn boolean_chain(stmt: &ast::StmtIf) -> Option<(Expr, &[Stmt])> {
+    let [
+        elif_clauses @ ..,
+        ElifElseClause {
+            test: None,
+            body: else_body,
+            ..
+        },
+    ] = stmt.elif_else_clauses.as_slice()
+    else {
+        return None;
+    };
+    if elif_clauses.is_empty() {
+        return None;
+    }
+
+    let if_return = is_one_line_return_bool(&stmt.body)?;
+    if is_one_line_return_bool(else_body)? == if_return {
+        return None;
+    }
+
+    let mut values = vec![(*stmt.test).clone()];
+    for clause in elif_clauses {
+        if is_one_line_return_bool(&clause.body)? != if_return {
+            return None;
+        }
+        values.push(clause.test.as_ref()?.clone());
+    }
+
+    Some((
+        ast::ExprBoolOp {
+            op: ast::BoolOp::Or,
+            values,
+            range: TextRange::default(),
+            node_index: ruff_python_ast::AtomicNodeIndex::NONE,
+        }
+        .into(),
+        else_body,
+    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

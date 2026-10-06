@@ -333,5 +333,257 @@ help: Replace with `return a == 10`
     -         return False
     -     return True
 159 +     return a == 10
+160 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+SIM103 [*] Return the condition `bool(a or b or c)` directly
+   --> SIM103.py:168:5
+    |
+167 |   def homogeneous(a, b, c):
+168 | /     if a:
+169 | |         return True
+170 | |     elif b:
+171 | |         return True
+172 | |     elif c:
+173 | |         return True
+174 | |     else:
+175 | |         return False
+    | |____________________^
+help: Replace with `return bool(a or b or c)`
+    |
+167 | def homogeneous(a, b, c):
+    -     if a:
+    -         return True
+    -     elif b:
+    -         return True
+    -     elif c:
+    -         return True
+    -     else:
+    -         return False
+168 +     return bool(a or b or c)
+169 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+SIM103 [*] Return the condition `not (a or b or c)` directly
+   --> SIM103.py:179:5
+    |
+178 |   def inverted(a, b, c):
+179 | /     if a:
+180 | |         return False
+181 | |     elif b:
+182 | |         return False
+183 | |     elif c:
+184 | |         return False
+185 | |     else:
+186 | |         return True
+    | |___________________^
+help: Replace with `return not (a or b or c)`
+    |
+178 | def inverted(a, b, c):
+    -     if a:
+    -         return False
+    -     elif b:
+    -         return False
+    -     elif c:
+    -         return False
+    -     else:
+    -         return True
+179 +     return not (a or b or c)
+180 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+SIM103 [*] Return the condition `bool(not a and b or a and b)` directly
+   --> SIM103.py:190:5
+    |
+189 |   def issue_6184(a, b):
+190 | /     if not a and b:
+191 | |         return True
+192 | |     elif a and b:
+193 | |         return True
+194 | |     else:
+195 | |         return False
+    | |____________________^
+help: Replace with `return bool(not a and b or a and b)`
+    |
+189 | def issue_6184(a, b):
+    -     if not a and b:
+    -         return True
+    -     elif a and b:
+    -         return True
+    -     else:
+    -         return False
+190 +     return bool(not a and b or a and b)
+191 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+SIM103 [*] Return the condition `bool((a if b else c) or c and d)` directly
+   --> SIM103.py:199:5
+    |
+198 |   def precedence(a, b, c, d):
+199 | /     if a if b else c:
+200 | |         return True
+201 | |     elif c and d:
+202 | |         return True
+203 | |     else:
+204 | |         return False
+    | |____________________^
+help: Replace with `return bool((a if b else c) or c and d)`
+    |
+198 | def precedence(a, b, c, d):
+    -     if a if b else c:
+    -         return True
+    -     elif c and d:
+    -         return True
+    -     else:
+    -         return False
+199 +     return bool((a if b else c) or c and d)
+200 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+SIM103 [*] Return the condition `bool((value := a) or b)` directly
+   --> SIM103.py:208:5
+    |
+207 |   def assignment_expression(a, b):
+208 | /     if (value := a):
+209 | |         return True
+210 | |     elif b:
+211 | |         return True
+212 | |     else:
+213 | |         return False
+    | |____________________^
+help: Replace with `return bool((value := a) or b)`
+    |
+207 | def assignment_expression(a, b):
+    -     if (value := a):
+    -         return True
+    -     elif b:
+    -         return True
+    -     else:
+    -         return False
+208 +     return bool((value := a) or b)
+209 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+SIM103 [*] Return the condition `bool(b)` directly
+   --> SIM103.py:219:5
+    |
+217 |       if a:
+218 |           return False
+219 | /     elif b:
+220 | |         return True
+221 | |     else:
+222 | |         return False
+    | |____________________^
+help: Replace with `return bool(b)`
+    |
+218 |         return False
+    -     elif b:
+    -         return True
+    -     else:
+    -         return False
+219 +     return bool(b)
+220 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+SIM103 [*] Return the condition `bool(b)` directly
+   --> SIM103.py:229:5
+    |
+227 |           foo()
+228 |           return True
+229 | /     elif b:
+230 | |         return True
+231 | |     else:
+232 | |         return False
+    | |____________________^
+help: Replace with `return bool(b)`
+    |
+228 |         return True
+    -     elif b:
+    -         return True
+    -     else:
+    -         return False
+229 +     return bool(b)
+230 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+SIM103 [*] Return the condition `bool(b)` directly
+   --> SIM103.py:248:5
+    |
+246 |       if a:
+247 |           return 1
+248 | /     elif b:
+249 | |         return True
+250 | |     else:
+251 | |         return False
+    | |____________________^
+help: Replace with `return bool(b)`
+    |
+247 |         return 1
+    -     elif b:
+    -         return True
+    -     else:
+    -         return False
+248 +     return bool(b)
+249 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+SIM103 Return the condition directly
+   --> SIM103.py:255:5
+    |
+254 |   def commented(a, b):
+255 | /     if a:
+256 | |         # Preserve this explanation.
+257 | |         return True
+258 | |     elif b:
+259 | |         return True
+260 | |     else:
+261 | |         return False
+    | |____________________^
+help: Inline condition
+
+SIM103 Return the condition directly
+   --> SIM103.py:265:5
+    |
+264 |   def shadowed(a, b, bool):
+265 | /     if a:
+266 | |         return True
+267 | |     elif b:
+268 | |         return True
+269 | |     else:
+270 | |         return False
+    | |____________________^
+help: Inline condition
+
+SIM103 [*] Return the condition `not (a or b)` directly
+   --> SIM103.py:274:5
+    |
+273 |   def inverted_shadowed(a, b, bool):
+274 | /     if a:
+275 | |         return False
+276 | |     elif b:
+277 | |         return False
+278 | |     else:
+279 | |         return True
+    | |___________________^
+help: Replace with `return not (a or b)`
+    |
+273 | def inverted_shadowed(a, b, bool):
+    -     if a:
+    -         return False
+    -     elif b:
+    -         return False
+    -     else:
+    -         return True
+274 +     return not (a or b)
+275 |
     |
 note: This is an unsafe fix and may change runtime behavior
